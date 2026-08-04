@@ -6,10 +6,9 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   server: {
     proxy: {
-      '/api/fpl': {
-        target: 'https://fantasy.premierleague.com',
+      '/api': {
+        target: 'http://localhost:8000',
         changeOrigin: true,
-        rewrite: path => path.replace(/^\/api\/fpl/, '/api'),
       },
     },
   },

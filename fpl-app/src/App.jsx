@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom'
 import { useFplData } from './hooks/useFplData'
 import Players from './pages/Players'
 import MyTeam from './pages/MyTeam'
+import Charts from './pages/Charts'
 
 export default function App() {
   const { data, loading, error } = useFplData()
@@ -52,6 +53,16 @@ export default function App() {
               >
                 My Team
               </NavLink>
+              <NavLink
+                to="/charts"
+                className={({ isActive }) =>
+                  `px-3 py-1.5 rounded text-sm font-medium transition-colors ${
+                    isActive ? 'bg-white/20' : 'hover:bg-white/10'
+                  }`
+                }
+              >
+                Charts
+              </NavLink>
             </nav>
           </div>
         </header>
@@ -71,6 +82,10 @@ export default function App() {
             <Route
               path="/my-team"
               element={<MyTeam bootstrap={data.bootstrap} fixtures={data.fixtures} />}
+            />
+            <Route
+              path="/charts"
+              element={<Charts bootstrap={data.bootstrap} />}
             />
           </Routes>
         </main>

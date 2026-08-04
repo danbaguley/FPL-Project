@@ -1,25 +1,31 @@
-const BASE = '/api/fpl'
+const BASE = '/api'
 
 export async function fetchBootstrapStatic() {
-  const res = await fetch(`${BASE}/bootstrap-static/`)
+  const res = await fetch(`${BASE}/bootstrap-static`)
   if (!res.ok) throw new Error('Failed to fetch FPL data')
   return res.json()
 }
 
 export async function fetchFixtures() {
-  const res = await fetch(`${BASE}/fixtures/`)
+  const res = await fetch(`${BASE}/fixtures`)
   if (!res.ok) throw new Error('Failed to fetch fixtures')
   return res.json()
 }
 
 export async function fetchEntry(teamId) {
-  const res = await fetch(`${BASE}/entry/${teamId}/`)
+  const res = await fetch(`${BASE}/entry/${teamId}`)
   if (!res.ok) throw new Error('Team not found — check your team ID and try again')
   return res.json()
 }
 
 export async function fetchEventPicks(teamId, gw) {
-  const res = await fetch(`${BASE}/entry/${teamId}/event/${gw}/picks/`)
+  const res = await fetch(`${BASE}/entry/${teamId}/event/${gw}/picks`)
   if (!res.ok) throw new Error(`Could not load picks for gameweek ${gw}`)
+  return res.json()
+}
+
+export async function fetchPlayersForm() {
+  const res = await fetch(`${BASE}/players/form`)
+  if (!res.ok) throw new Error('Failed to fetch form data')
   return res.json()
 }

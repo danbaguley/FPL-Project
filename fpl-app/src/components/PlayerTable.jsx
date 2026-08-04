@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback } from 'react'
+import { fetchPlayersForm } from '../services/fplApi'
 
 const POSITION_LABELS = { 1: 'GK', 2: 'DEF', 3: 'MID', 4: 'FWD' }
 
@@ -26,26 +27,6 @@ function getAvailabilityStyle(player) {
   return null
 }
 
-function computeLast5Stats(history) {
-  if (!history || history.length === 0) return null
-  const last5 = history.slice(-5)
-  const sum = (field, parse = false) =>
-    last5.reduce((s, h) => s + (parse ? parseFloat(h[field] || 0) : (h[field] || 0)), 0)
-  const minutes = sum('minutes')
-  return {
-    starts: last5.reduce((s, h) => s + (h.starts ?? (h.minutes >= 45 ? 1 : 0)), 0),
-    minutes,
-    total_points: sum('total_points'),
-    goals_scored: sum('goals_scored'),
-    assists: sum('assists'),
-    clean_sheets: sum('clean_sheets'),
-    expected_goals: sum('expected_goals', true),
-    expected_assists: sum('expected_assists', true),
-    expected_goal_involvements: sum('expected_goal_involvements', true),
-    defensive_contribution: sum('defensive_contribution'),
-  }
-}
-
 function fmtStat(value, minutes, per90) {
   const num = parseFloat(value)
   if (isNaN(num)) return '-'
@@ -66,9 +47,8 @@ export default function PlayerTable({ bootstrap, fixtures }) {
   const [sortDir, setSortDir] = useState('desc')
   const [per90, setPer90] = useState(false)
   const [formMode, setFormMode] = useState(false)
-  const [playerHistories, setPlayerHistories] = useState({})
+  const [formStats, setFormStats] = useState({})
   const [loadingForm, setLoadingForm] = useState(false)
-  const [loadingProgress, setLoadingProgress] = useState(0)
   const [formError, setFormError] = useState(null)
 
   const teamMap = useMemo(
@@ -91,16 +71,7 @@ export default function PlayerTable({ bootstrap, fixtures }) {
     return map
   }, [fixtures])
 
-  const formStats = useMemo(() => {
-    const result = {}
-    for (const [id, data] of Object.entries(playerHistories)) {
-      const stats = computeLast5Stats(data.history)
-      if (stats) result[id] = stats
-    }
-    return result
-  }, [playerHistories])
-
-  // Returns the stats to display for a player — form (last 5) or season totals
+  // Backend pre-computes last-5 stats — just look up by player ID
   function getEffectiveStats(player) {
     if (formMode && formStats[player.id]) return { ...player, ...formStats[player.id] }
     return player
@@ -135,48 +106,20 @@ export default function PlayerTable({ bootstrap, fixtures }) {
 
   const toggleFormMode = useCallback(async () => {
     if (formMode) { setFormMode(false); return }
-    if (Object.keys(playerHistories).length > 0) { setFormMode(true); return }
+    if (Object.keys(formStats).length > 0) { setFormMode(true); return }
 
     setLoadingForm(true)
-    setLoadingProgress(0)
     setFormError(null)
-    console.log('Form button clicked — starting fetch for', bootstrap.elements.length, 'players')
     try {
-      const ids = bootstrap.elements.map(p => p.id)
-      const CHUNK = 50
-      const PARALLEL = 5
-      const chunks = []
-      for (let i = 0; i < ids.length; i += CHUNK) chunks.push(ids.slice(i, i + CHUNK))
-
-      const histories = {}
-      for (let i = 0; i < chunks.length; i += PARALLEL) {
-        const group = chunks.slice(i, i + PARALLEL)
-        await Promise.all(
-          group.map(async chunk => {
-            const results = await Promise.all(
-              chunk.map(id =>
-                fetch(`/api/fpl/element-summary/${id}/`)
-                  .then(r => r.json())
-                  .catch(() => ({ history: [] }))
-              )
-            )
-            chunk.forEach((id, j) => { histories[id] = results[j] })
-          })
-        )
-        setLoadingProgress(prev => Math.min(prev + group.length * CHUNK, ids.length))
-      }
-
-      setPlayerHistories(histories)
+      const data = await fetchPlayersForm()
+      setFormStats(data)
       setFormMode(true)
-      console.log('Form data loaded successfully')
     } catch (err) {
-      console.error('Failed to load form data:', err)
       setFormError(`Error: ${err.message}`)
     } finally {
       setLoadingForm(false)
-      setLoadingProgress(0)
     }
-  }, [formMode, playerHistories, bootstrap.elements])
+  }, [formMode, formStats])
 
   function handleSort(col) {
     if (sortCol === col) {
@@ -235,10 +178,7 @@ export default function PlayerTable({ bootstrap, fixtures }) {
               : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
           }`}
         >
-          {loadingForm
-            ? `Loading ${loadingProgress}/${bootstrap.elements.length}...`
-            : formMode ? 'Form: last 5' : 'Form'
-          }
+          {loadingForm ? 'Loading...' : formMode ? 'Form: last 5' : 'Form'}
         </button>
         <button
           onClick={() => setPer90(p => !p)}
@@ -252,9 +192,7 @@ export default function PlayerTable({ bootstrap, fixtures }) {
         </button>
       </div>
 
-      {formError && (
-        <p className="text-red-500 text-sm mb-3">{formError}</p>
-      )}
+      {formError && <p className="text-red-500 text-sm mb-3">{formError}</p>}
       {formMode && Object.keys(formStats).length === 0 && (
         <p className="text-amber-600 bg-amber-50 border border-amber-200 rounded px-3 py-2 text-sm mb-3">
           No match history available yet — form stats will appear once the season starts.
@@ -274,9 +212,7 @@ export default function PlayerTable({ bootstrap, fixtures }) {
               <Th col="now_cost" center>Price</Th>
               <Th col="starts" center>MS</Th>
               <Th col="minutes" center>Min</Th>
-              <th className="px-2 py-2 text-xs font-semibold uppercase tracking-wide text-center whitespace-nowrap">
-                Min/M
-              </th>
+              <th className="px-2 py-2 text-xs font-semibold uppercase tracking-wide text-center whitespace-nowrap">Min/M</th>
               <Th col="total_points" center>Pts</Th>
               <Th col="defensive_contribution" center>Defcon</Th>
               <Th col="expected_goal_involvements" center>xGI</Th>
@@ -285,10 +221,7 @@ export default function PlayerTable({ bootstrap, fixtures }) {
               <Th col="goals_scored" center>G</Th>
               <Th col="assists" center>A</Th>
               <Th col="clean_sheets" center>CS</Th>
-              <th
-                className="px-2 py-2 text-xs font-semibold uppercase tracking-wide text-center whitespace-nowrap border-l border-gray-200"
-                colSpan={6}
-              >
+              <th className="px-2 py-2 text-xs font-semibold uppercase tracking-wide text-center whitespace-nowrap border-l border-gray-200" colSpan={6}>
                 Next 6 Fixtures
               </th>
             </tr>
@@ -302,9 +235,7 @@ export default function PlayerTable({ bootstrap, fixtures }) {
               const minPerMatch = stats.starts > 0 ? Math.round(stats.minutes / stats.starts) : '-'
               const price = (player.now_cost / 10).toFixed(1)
               const avail = getAvailabilityStyle(player)
-              const rowStyle = avail
-                ? { backgroundColor: avail.bg, borderLeft: `4px solid ${avail.border}` }
-                : {}
+              const rowStyle = avail ? { backgroundColor: avail.bg, borderLeft: `4px solid ${avail.border}` } : {}
 
               return (
                 <tr key={player.id} style={rowStyle}>
@@ -313,59 +244,32 @@ export default function PlayerTable({ bootstrap, fixtures }) {
                     style={{ backgroundColor: avail?.bg ?? '#fff' }}
                   >
                     {player.web_name}
-                    {player.news && (
-                      <span className="ml-1 text-xs text-gray-400" title={player.news}>⚑</span>
-                    )}
+                    {player.news && <span className="ml-1 text-xs text-gray-400" title={player.news}>⚑</span>}
                   </td>
-                  <td className="px-2 py-1.5 text-gray-500 text-center">
-                    {POSITION_LABELS[player.element_type]}
-                  </td>
+                  <td className="px-2 py-1.5 text-gray-500 text-center">{POSITION_LABELS[player.element_type]}</td>
                   <td className="px-2 py-1.5 text-gray-500 whitespace-nowrap">{team?.short_name}</td>
                   <td className="px-2 py-1.5 text-center text-gray-600">£{price}m</td>
                   <td className="px-2 py-1.5 text-center">{stats.starts ?? '-'}</td>
                   <td className="px-2 py-1.5 text-center">{stats.minutes}</td>
                   <td className="px-2 py-1.5 text-center">{minPerMatch}</td>
+                  <td className="px-2 py-1.5 text-center">{fmtStat(stats.total_points, stats.minutes, per90)}</td>
                   <td className="px-2 py-1.5 text-center">
-                    {fmtStat(stats.total_points, stats.minutes, per90)}
+                    {isGK ? <span className="text-gray-300">N/A</span> : fmtStat(stats.defensive_contribution, stats.minutes, per90)}
                   </td>
-                  <td className="px-2 py-1.5 text-center">
-                    {isGK
-                      ? <span className="text-gray-300">N/A</span>
-                      : fmtStat(stats.defensive_contribution, stats.minutes, per90)
-                    }
-                  </td>
-                  <td className="px-2 py-1.5 text-center">
-                    {fmtStat(stats.expected_goal_involvements, stats.minutes, per90)}
-                  </td>
-                  <td className="px-2 py-1.5 text-center">
-                    {fmtStat(stats.expected_goals, stats.minutes, per90)}
-                  </td>
-                  <td className="px-2 py-1.5 text-center">
-                    {fmtStat(stats.expected_assists, stats.minutes, per90)}
-                  </td>
-                  <td className="px-2 py-1.5 text-center">
-                    {fmtStat(stats.goals_scored, stats.minutes, per90)}
-                  </td>
-                  <td className="px-2 py-1.5 text-center">
-                    {fmtStat(stats.assists, stats.minutes, per90)}
-                  </td>
-                  <td className="px-2 py-1.5 text-center">
-                    {fmtStat(stats.clean_sheets, stats.minutes, per90)}
-                  </td>
-
+                  <td className="px-2 py-1.5 text-center">{fmtStat(stats.expected_goal_involvements, stats.minutes, per90)}</td>
+                  <td className="px-2 py-1.5 text-center">{fmtStat(stats.expected_goals, stats.minutes, per90)}</td>
+                  <td className="px-2 py-1.5 text-center">{fmtStat(stats.expected_assists, stats.minutes, per90)}</td>
+                  <td className="px-2 py-1.5 text-center">{fmtStat(stats.goals_scored, stats.minutes, per90)}</td>
+                  <td className="px-2 py-1.5 text-center">{fmtStat(stats.assists, stats.minutes, per90)}</td>
+                  <td className="px-2 py-1.5 text-center">{fmtStat(stats.clean_sheets, stats.minutes, per90)}</td>
                   {Array.from({ length: 6 }, (_, i) => {
                     const fix = upcomingFix[i]
-                    if (!fix) {
-                      return <td key={i} className={`px-0.5 py-1 ${i === 0 ? 'border-l border-gray-200' : ''}`} />
-                    }
+                    if (!fix) return <td key={i} className={`px-0.5 py-1 ${i === 0 ? 'border-l border-gray-200' : ''}`} />
                     const opp = teamMap[fix.opponent]
                     const fdrStyle = FDR_STYLES[fix.difficulty] ?? FDR_STYLES[3]
                     return (
                       <td key={i} className={`px-0.5 py-1 ${i === 0 ? 'border-l border-gray-200' : ''}`}>
-                        <span
-                          className="inline-block px-1.5 py-0.5 rounded text-xs font-bold whitespace-nowrap"
-                          style={fdrStyle}
-                        >
+                        <span className="inline-block px-1.5 py-0.5 rounded text-xs font-bold whitespace-nowrap" style={fdrStyle}>
                           {opp?.short_name} {fix.home ? 'H' : 'A'}
                         </span>
                       </td>
@@ -377,7 +281,6 @@ export default function PlayerTable({ bootstrap, fixtures }) {
           </tbody>
         </table>
       </div>
-
       <p className="text-xs text-gray-400 mt-2">
         {players.length} players · MS = Matches Started · Min/M = Minutes per match started
         {formMode && ' · Showing stats for last 5 games'}
