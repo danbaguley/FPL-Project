@@ -68,6 +68,8 @@ export default function PlayerTable({ bootstrap, fixtures }) {
   const [formMode, setFormMode] = useState(false)
   const [playerHistories, setPlayerHistories] = useState({})
   const [loadingForm, setLoadingForm] = useState(false)
+  const [loadingProgress, setLoadingProgress] = useState(0)
+  const [formError, setFormError] = useState(null)
 
   const teamMap = useMemo(
     () => Object.fromEntries(bootstrap.teams.map(t => [t.id, t])),
@@ -136,23 +138,43 @@ export default function PlayerTable({ bootstrap, fixtures }) {
     if (Object.keys(playerHistories).length > 0) { setFormMode(true); return }
 
     setLoadingForm(true)
+    setLoadingProgress(0)
+    setFormError(null)
+    console.log('Form button clicked — starting fetch for', bootstrap.elements.length, 'players')
     try {
       const ids = bootstrap.elements.map(p => p.id)
-      const results = await Promise.all(
-        ids.map(id =>
-          fetch(`/api/fpl/element-summary/${id}/`)
-            .then(r => r.json())
-            .catch(() => ({ history: [] }))
-        )
-      )
+      const CHUNK = 50
+      const PARALLEL = 5
+      const chunks = []
+      for (let i = 0; i < ids.length; i += CHUNK) chunks.push(ids.slice(i, i + CHUNK))
+
       const histories = {}
-      ids.forEach((id, i) => { histories[id] = results[i] })
+      for (let i = 0; i < chunks.length; i += PARALLEL) {
+        const group = chunks.slice(i, i + PARALLEL)
+        await Promise.all(
+          group.map(async chunk => {
+            const results = await Promise.all(
+              chunk.map(id =>
+                fetch(`/api/fpl/element-summary/${id}/`)
+                  .then(r => r.json())
+                  .catch(() => ({ history: [] }))
+              )
+            )
+            chunk.forEach((id, j) => { histories[id] = results[j] })
+          })
+        )
+        setLoadingProgress(prev => Math.min(prev + group.length * CHUNK, ids.length))
+      }
+
       setPlayerHistories(histories)
       setFormMode(true)
-    } catch {
-      // form data unavailable, stay in season mode
+      console.log('Form data loaded successfully')
+    } catch (err) {
+      console.error('Failed to load form data:', err)
+      setFormError(`Error: ${err.message}`)
     } finally {
       setLoadingForm(false)
+      setLoadingProgress(0)
     }
   }, [formMode, playerHistories, bootstrap.elements])
 
@@ -213,7 +235,10 @@ export default function PlayerTable({ bootstrap, fixtures }) {
               : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
           }`}
         >
-          {loadingForm ? 'Loading...' : formMode ? 'Form: last 5' : 'Form'}
+          {loadingForm
+            ? `Loading ${loadingProgress}/${bootstrap.elements.length}...`
+            : formMode ? 'Form: last 5' : 'Form'
+          }
         </button>
         <button
           onClick={() => setPer90(p => !p)}
@@ -226,6 +251,15 @@ export default function PlayerTable({ bootstrap, fixtures }) {
           {per90 ? 'Per 90 mins' : 'Season total'}
         </button>
       </div>
+
+      {formError && (
+        <p className="text-red-500 text-sm mb-3">{formError}</p>
+      )}
+      {formMode && Object.keys(formStats).length === 0 && (
+        <p className="text-amber-600 bg-amber-50 border border-amber-200 rounded px-3 py-2 text-sm mb-3">
+          No match history available yet — form stats will appear once the season starts.
+        </p>
+      )}
 
       {/* Table */}
       <div className="overflow-x-auto rounded border border-gray-200 shadow-sm">
