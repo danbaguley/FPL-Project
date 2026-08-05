@@ -96,7 +96,13 @@ export default function Charts({ bootstrap }) {
     () => bootstrap.events.filter(e => e.finished).length,
     [bootstrap.events]
   )
-  const minMinutesThreshold = finishedGws * 90 * 0.5
+
+  const minMinutesThreshold = useMemo(() => {
+    if (finishedGws > 0) return finishedGws * 90 * 0.5
+    // Pre-season: data is from last season — use 50% of the most-played player's minutes
+    const maxMins = Math.max(0, ...bootstrap.elements.map(p => p.minutes || 0))
+    return maxMins * 0.5
+  }, [finishedGws, bootstrap.elements])
 
   const chartData = useMemo(() => {
     return bootstrap.elements
@@ -243,7 +249,8 @@ export default function Charts({ bootstrap }) {
 
       <p className="text-xs text-gray-400 mt-2">
         Showing top 30 {posLabel}s by {yAxisLabel}
-        {finishedGws > 0 && ` · Min. ${minMinutesThreshold} mins played (50% of ${finishedGws} GWs)`}
+        {` · Min. ${Math.round(minMinutesThreshold)} mins played`}
+        {finishedGws > 0 ? ` (50% of ${finishedGws} GWs)` : ' (50% of most-played, pre-season)'}
         {formMode && ' · Stats from last 5 games'}
       </p>
     </div>
