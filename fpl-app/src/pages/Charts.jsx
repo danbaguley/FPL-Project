@@ -92,6 +92,12 @@ export default function Charts({ bootstrap }) {
 
   const isGkDefcon = posFilter === 1 && activeStat.key === 'defensive_contribution'
 
+  const finishedGws = useMemo(
+    () => bootstrap.events.filter(e => e.finished).length,
+    [bootstrap.events]
+  )
+  const minMinutesThreshold = finishedGws * 90 * 0.5
+
   const chartData = useMemo(() => {
     return bootstrap.elements
       .filter(p => p.element_type === posFilter)
@@ -108,9 +114,10 @@ export default function Charts({ bootstrap }) {
           y,
         }
       })
+      .filter(p => p.x >= minMinutesThreshold)
       .sort((a, b) => b.y - a.y)
       .slice(0, 30)
-  }, [bootstrap.elements, posFilter, activeStat, per90, formMode, formStats, teamMap, isGkDefcon])
+  }, [bootstrap.elements, posFilter, activeStat, per90, formMode, formStats, teamMap, isGkDefcon, minMinutesThreshold])
 
   const posLabel = POSITIONS.find(p => p.value === posFilter)?.label ?? ''
   const yAxisLabel = `${activeStat.label}${per90 ? ' per 90' : ''}`
@@ -236,6 +243,7 @@ export default function Charts({ bootstrap }) {
 
       <p className="text-xs text-gray-400 mt-2">
         Showing top 30 {posLabel}s by {yAxisLabel}
+        {finishedGws > 0 && ` · Min. ${minMinutesThreshold} mins played (50% of ${finishedGws} GWs)`}
         {formMode && ' · Stats from last 5 games'}
       </p>
     </div>
