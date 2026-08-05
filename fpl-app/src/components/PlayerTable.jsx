@@ -244,6 +244,7 @@ export default function PlayerTable({ bootstrap, fixtures }) {
                     style={{ backgroundColor: avail?.bg ?? '#fff' }}
                   >
                     {player.web_name}
+                    <span className="ml-1.5 text-xs text-gray-400 font-normal">{team?.short_name}</span>
                     {player.news && <span className="ml-1 text-xs text-gray-400" title={player.news}>⚑</span>}
                   </td>
                   <td className="px-2 py-1.5 text-gray-500 text-center">{POSITION_LABELS[player.element_type]}</td>
